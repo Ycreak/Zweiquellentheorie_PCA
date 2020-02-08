@@ -1,5 +1,11 @@
 *.pickle
 *.swp
+*.swo
+*.pyc
+*.csv
+BAK/
+CSV/
+Greek/
 
 # Logs
 logs

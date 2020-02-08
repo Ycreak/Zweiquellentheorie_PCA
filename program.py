@@ -9,12 +9,17 @@ import pickle
 
 from sklearn.decomposition import PCA
 
-
-# import sklearn
-# from sklearn.feature_extraction.text import TfidfTransformer
-# from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.cluster import KMeans
+
+import nltk
+from nltk.corpus import stopwords
+
+# Local file with all the bible books in an array
+import biblebooks
+
+pd.set_option('display.max_rows', None)
 
 # Command line parser base on the Classification of text documents using sparse
 # features program by Peter Prettenhofer, Olivier Grisel, Mathieu Blondel and Lars Buitinck
@@ -23,12 +28,12 @@ op = OptionParser()
 op.add_option("--redoVect",
               action="store_true", dest="redoVect",
               help="Creates new Vect data in pickle form.")
-op.add_option("--printResults",
-              action="store_true", dest="printResults",
-              help="Does what it says on the tin.")
-op.add_option("--POSTagger",
-              action="store_true", dest="POSTagger",
-              help="Reruns the POSTagger.")
+op.add_option("--plotBooks",
+              action="store_true", dest="plotBooks",
+              help="Create plot of Books.")
+op.add_option("--plotChapters",
+              action="store_true", dest="plotChapters",
+              help="Create plot of chapters.")
 op.add_option("--Progress",
               action="store_true", dest="Progress",
               help="Prints progress of the program.")
@@ -55,112 +60,99 @@ print()
 ########
 import csv
 
-teller = 1
-arrayB = []
-
-# with open("t_asv.csv", "r") as f:
-    # reader = csv.DictReader(f, delimiter=",")
-    # for row in reader:
-        # # teller = row['b']
-        # if teller == row['b']:
-            # # print(row['b'],row['t'])
-           # print('hello: ', row['b'])
-
-# with open('protagonist.csv', 'w', newline='') as file:
-    # writer = csv.writer(file)
-    # writer.writerows(row_list)
-
+# Dumps given data in the given filename for later use
 def dumpPickle(filename, data):
     with open(filename, 'wb') as f:
         pickle.dump(data, f)
 
-df = pd.read_csv('t_asv.csv')
 
-print(df['t'])
+def runProgram(df, file):
+    # Remove all stop words (very necessary!)
+    for t in stopwords.words('english'):
+        df.t = [s.replace(' ' + t + ' ', ' ') for s in df.t]
 
-# print(df)
-# exit(0)
+    # Group by book and create a new dataframe with book and text (and an index)
+    df_perBook = df.groupby(['b'])['t'].apply('  '.join).reset_index()
+    df_perChapter = df.groupby(['b','c'])['t'].apply('  '.join).reset_index()
 
+    # Add a column for the Testament
+    df_perBook['testament'] = 0
+    df_perChapter['testament'] = 0
 
-# print(df)
-# exit(0)
+    # The first 39 books are the Old Testament, the following the New one
+    firstMat = df_perBook.loc[df_perBook['b'] == 40, :].index[0]
+    df_perBook.loc[firstMat:, 'testament'] = 1
 
+    firstMat = df_perChapter.loc[df_perChapter['b'] == 40, :].index[0]
+    df_perChapter.loc[firstMat:, 'testament'] = 1
 
-df_perChapter = df.groupby(['b'])['t'].apply('  '.join).reset_index()
-# print(df_perChapter)
+    if opts.plotBooks:
+        # Vecotrizer
+        vec = TfidfVectorizer()
+        vecRes = vec.fit_transform(df_perBook.t).toarray()
 
-df_perChapter['testament'] = 0
-# print(df_perChapter)
+        # PCA creation
+        dr = PCA(n_components=2)
+        pcaDF = pd.DataFrame(dr.fit_transform(vecRes))
 
-firstMat = df_perChapter.loc[df_perChapter['b'] == 40, :].index[0]
-df_perChapter.loc[firstMat:, 'testament'] = 1
+        # Some magic I do not understand
+        testament = df_perBook.groupby(['b'])[['testament']].agg('mean')
+        testament.index = range(0,66)
+        bookNames = df_perBook.groupby(['b']).agg('sum').index
 
+        # Initialize the plot
+        fig = plt.figure()
+        fig.set_size_inches(14, 8)
 
-# print(df.b)
-# print(df_perChapter)
-# exit(0)
+        pcaDF = pd.DataFrame(dr.fit_transform(vecRes))
+        plt.scatter(pcaDF.loc[testament.testament == 0, 0], pcaDF.loc[testament.testament == 0, 1], label='Old')
+        plt.scatter(pcaDF.loc[testament.testament == 1, 0], pcaDF.loc[testament.testament == 1, 1], label='New')
 
-if opts.redoVect:
-    if opts.Progress:
-        print("Redoing Vectorization")
+        # Annotate the datapoints with the name of the corresponding book
+        for p in pcaDF.index:
+            plt.annotate(biblebooks.books[p], (pcaDF.loc[p, 0], pcaDF.loc[p, 1]))
 
-    vec = TfidfVectorizer()
-    vecRes = vec.fit_transform(df_perChapter.t).toarray()
-    simRes = cosine_similarity(vecRes)
+        # Some Plot options
+        titlePlt = 'Books PCA'+file
+        plt.title(titlePlt)
+        plt.legend()
+        plt.show()
 
-    # vecRes = "helo"
-    # simRes = "helo1"
+    if opts.plotChapters:
+        # Vecotrizer
+        vec = TfidfVectorizer()
+        vecRes = vec.fit_transform(df_perChapter.t).toarray()
 
-    dumpPickle('vecRes.pickle',vecRes)
-    dumpPickle('simRes.pickle',simRes)
-else:
-    if opts.Progress:
-        print("Loading Pickle Files")
-    vesRes = pickle.load('vecRes.pickle')
-    simRes = pickle.load('simRes.pickle')
+        # PCA creation
+        dr = PCA(n_components=2)
+        pcaDF = pd.DataFrame(dr.fit_transform(vecRes))
 
-if opts.Progress:
-    print("Melting")
-# chaptersSim = pd.melt(pd.DataFrame(simRes)).value.drop_duplicates()
+        fig = plt.figure() #.subplots(nrows=2, ncols=1)
+        fig.set_size_inches(14, 12)
 
-# if opts.Progress:
-    # print("Creating Plot")
-# fig, ax = plt.subplots(nrows=1, ncols=2)
+        # Chapters
+        plt.scatter(pcaDF.loc[df_perChapter.testament == 0, :].iloc[:, 0], pcaDF.loc[df_perChapter.testament == 0, :].iloc[:, 1], label='Old')
+        plt.scatter(pcaDF.loc[df_perChapter.testament == 1, :].iloc[:, 0], pcaDF.loc[df_perChapter.testament == 1, :].iloc[:, 1], label='New')
+        plt.legend()
 
-# chaptersSim.hist(ax=ax[0])
-# ax[0].set_title('Books')
+        for p in pcaDF.index:
+            book = df_perChapter.b[p] - 1
+            chapter = df_perChapter.c[p]
+            string = str(book+1) + biblebooks.books[book] + str(chapter)
+            plt.annotate(string, (pcaDF.loc[p, 0], pcaDF.loc[p, 1]))
 
-# plt.show()
+        plt.show()
 
-dr = PCA(n_components=2)
-pcaDF = pd.DataFrame(dr.fit_transform(vecRes))
-# pcaDF_books = pd.DataFrame(dr.fit_transform(vecRes_books))
+        print('Execution finished')
 
-fig, ax = plt.subplots(nrows=2, ncols=1)
-fig.set_size_inches(14, 12)
+# Read the CSV file
 
-ax[0].scatter(pcaDF.loc[df_perChapter.testament == 0, :].iloc[:, 0], pcaDF.loc[df_perChapter.testament == 0, :].iloc[:, 1], label='Old')
-ax[0].scatter(pcaDF.loc[df_perChapter.testament == 1, :].iloc[:, 0], pcaDF.loc[df_perChapter.testament == 1, :].iloc[:, 1], label='New')
-ax[0].set_title('Books PCA')
-ax[0].legend()
+import glob
+path = './CSV/*.csv'
+files = glob.glob(path)
 
-# Chapters
-# ax[0].scatter(pcaDF, pcaDF)
-# ax[0].scatter(pcaDF.iloc[:, 0], pcaDF.iloc[:, 1])
-# ax[0].scatter(pcaDF.loc[df.testament == 1, :].iloc[:, 0], pcaDF.loc[df.testament == 1, :].iloc[:, 1], label='New')
-# ax[0].set_title('Chapters PCA')
-# ax[0].legend()
-
-plt.show()
-
-# for row in df:
-    # print(df.b, df.t)
-
-# print((df.t).toarray())
-
-# with open("t_asv.csv") as f:
-    # for line in f:
-        # for item in line:
-            # print(item) #print(line)
-
+for file in files:
+    print(file)
+    df = pd.read_csv(file)
+    runProgram(df, file)
 
